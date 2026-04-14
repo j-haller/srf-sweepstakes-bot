@@ -1,0 +1,6 @@
+services:
+  sweepstakes:
+    build: .
+    env_file:
+      - .env
+    restart: on-failure
