@@ -6,60 +6,143 @@ import math
 import time
 import os
 from dotenv import load_dotenv
-
+from scipy.optimize import minimize
 load_dotenv()
 
 API_KEY = os.environ["API_KEY"]
 COOKIES = os.environ["COOKIES"].split(",")
 
-URL_ODDS = f"https://api.the-odds-api.com/v4/sports/soccer_uefa_european_championship/odds?regions=eu&bookmakers=sport888&apiKey={API_KEY}"
-URL_BETS = "https://emtippspiel.srf.ch/bet"
-URL_ROUND = "https://emtippspiel.srf.ch/round"
+URL_ODDS = f"https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds?regions=eu&bookmakers=sport888&apiKey={API_KEY}"
+URL_BETS = "https://wmtippspiel.srf.ch/bet"
+URL_ROUND = "https://wmtippspiel.srf.ch/round"
 
 TIMEZONE_OFFSET = timedelta(hours=2)
 MIN_LEAD_SECONDS = 600  # don't bet within 10 minutes of kickoff
-TOTAL_ROUNDS = 7
-AVG_GOALS = 2.46
-THRESHOLD = 0.75
-THRESHOLD_ONE = 0.5
+TOTAL_ROUNDS = 9
+PREFIX_ROUNDS = 4
+RHO = -0.13  # Dixon-Coles low-score correction
+MAX_GOALS = 8
+
 
 COUNTRIES = {
-    "Germany": "Deutschland", "Scotland": "Schottland", "Hungary": "Ungarn",
-    "Switzerland": "Schweiz", "Spain": "Spanien", "Croatia": "Kroatien",
-    "Italy": "Italien", "Albania": "Albanien", "Poland": "Polen",
-    "Netherlands": "Niederlande", "Slovenia": "Slowenien", "Denmark": "Dänemark",
-    "Serbia": "Serbien", "England": "England", "Romania": "Rumänien",
-    "Ukraine": "Ukraine", "Belgium": "Belgien", "Slovakia": "Slowakei",
-    "Austria": "Österreich", "France": "Frankreich", "Turkey": "Türkei",
-    "Georgia": "Georgien", "Portugal": "Portugal", "Czech Republic": "Tschechien",
+    "Mexico": "Mexiko",
+    "South Africa": "Südafrika",
+    "South Korea": "Südkorea",
+    "Czech Republic": "Tschechien",
+    "Canada": "Kanada",
+    "Bosnia & Herzegovina": "Bosnien-Herzeg.",
+    "USA": "USA",
+    "Paraguay": "Paraguay",
+    "Qatar": "Katar",
+    "Switzerland": "Schweiz",
+    "Brazil": "Brasilien",
+    "Morocco": "Marokko",
+    "Haiti": "Haiti",
+    "Scotland": "Schottland",
+    "Australia": "Australien",
+    "Turkey": "Türkei",
+    "Germany": "Deutschland",
+    "Curaçao": "Curacao",
+    "Netherlands": "Niederlande",
+    "Japan": "Japan",
+    "Ivory Coast": "Elfenbeinküste",
+    "Ecuador": "Ecuador",
+    "Sweden": "Schweden",
+    "Tunisia": "Tunesien",
+    "Spain": "Spanien",
+    "Cape Verde": "Kap Verde",
+    "Belgium": "Belgien",
+    "Egypt": "Ägypten",
+    "Saudi Arabia": "Saudi-Arabien",
+    "Uruguay": "Uruguay",
+    "Iran": "Iran",
+    "New Zealand": "Neuseeland",
+    "France": "Frankreich",
+    "Senegal": "Senegal",
+    "Iraq": "Irak",
+    "Norway": "Norwegen",
+    "Argentina": "Argentinien",
+    "Algeria": "Algerien",
+    "Austria": "Österreich",
+    "Jordan": "Jordanien",
+    "Portugal": "Portugal",
+    "DR Congo": "DR Kongo",
+    "England": "England",
+    "Croatia": "Kroatien",
+    "Ghana": "Ghana",
+    "Panama": "Panama",
+    "Uzbekistan": "Usbekistan",
+    "Colombia": "Kolumbien",
 }
 
 
-def round_goals(goals):
-    if goals < 1:
-        return math.floor(goals) if goals < THRESHOLD_ONE else math.ceil(goals)
-    return math.floor(goals) if goals < math.floor(goals + THRESHOLD) else math.ceil(goals)
+def en_to_de(english_name):
+    german_name = COUNTRIES.get(english_name)
+    if german_name is None:
+        print(f"Failed to translate country name: {english_name}")
+    return german_name
+
+
+def poisson_pmf(k, lam):
+    return math.exp(-lam) * (lam ** k) / math.factorial(k)
+
+
+def compute_1x2_probs(lambda_h, lambda_a):
+    p_home = p_draw = p_away = 0.0
+    for i in range(MAX_GOALS + 1):
+        for j in range(MAX_GOALS + 1):
+            p = poisson_pmf(i, lambda_h) * poisson_pmf(j, lambda_a)
+            if i > j:
+                p_home += p
+            elif i == j:
+                p_draw += p
+            else:
+                p_away += p
+    return p_home, p_draw, p_away
+
+
+def fit_lambdas(p_home, p_draw, p_away):
+    def objective(params):
+        lh, la = params
+        if lh <= 0 or la <= 0:
+            return 1e6
+        ph, pd, pa = compute_1x2_probs(lh, la)
+        return (ph - p_home) ** 2 + (pd - p_draw) ** 2 + (pa - p_away) ** 2
+
+    result = minimize(objective, x0=[1.5, 1.0], method="Nelder-Mead",
+                      options={"xatol": 1e-6, "fatol": 1e-10})
+    return result.x
+
+
+def dc_tau(i, j, lambda_h, lambda_a):
+    if i == 0 and j == 0:
+        return 1 - lambda_h * lambda_a * RHO
+    elif i == 1 and j == 0:
+        return 1 + lambda_a * RHO
+    elif i == 0 and j == 1:
+        return 1 + lambda_h * RHO
+    elif i == 1 and j == 1:
+        return 1 - RHO
+    return 1.0
 
 
 def calculate_score(odds_home, odds_away, odds_draw):
-    is_home_favorite = odds_home < odds_away
+    raw = [1 / odds_home, 1 / odds_draw, 1 / odds_away]
+    total = sum(raw)
+    p_home, p_draw, p_away = raw[0] / total, raw[1] / total, raw[2] / total
 
-    if is_home_favorite:
-        goals_home = odds_away * AVG_GOALS / odds_draw
-        goals_away = odds_home / AVG_GOALS
-    else:
-        goals_home = odds_away / AVG_GOALS
-        goals_away = odds_home * AVG_GOALS / odds_draw
+    lambda_h, lambda_a = fit_lambdas(p_home, p_draw, p_away)
 
-    goals_home = round_goals(goals_home)
-    goals_away = round_goals(goals_away)
+    best_prob = -1
+    best_score = (1, 1)
+    for i in range(MAX_GOALS + 1):
+        for j in range(MAX_GOALS + 1):
+            p = poisson_pmf(i, lambda_h) * poisson_pmf(j, lambda_a) * dc_tau(i, j, lambda_h, lambda_a)
+            if p > best_prob:
+                best_prob = p
+                best_score = (i, j)
 
-    if is_home_favorite:
-        goals_home -= 2 if goals_home - goals_away >= 3 else 1
-    else:
-        goals_away -= 2 if goals_away - goals_home >= 3 else 1
-
-    return goals_home, goals_away
+    return best_score
 
 
 def fetch_odds(current_datetime):
@@ -97,21 +180,25 @@ def fetch_odds(current_datetime):
 
         goals_home, goals_away = calculate_score(odds_home, odds_away, odds_draw)
 
-        home_team = COUNTRIES[home_team]
-        away_team = COUNTRIES[away_team]
-        matches[f"{home_team} - {away_team} - {event_date}"] = [goals_home, goals_away]
+        home_team = en_to_de(home_team)
+        away_team = en_to_de(away_team)
+        matches[f"{home_team} - {away_team} - {event_date[:10]}"] = [goals_home, goals_away]
 
     return matches, next_match
 
 
 def place_bets(matches, current_datetime):
     for round_num in range(1, TOTAL_ROUNDS + 1):
-        for cookie in COOKIES:
+        for i, cookie in enumerate(COOKIES):
             headers = {
                 "Content-Type": "application/json",
                 "Cookie": f"betty_web_production={cookie}",
             }
-            response = requests.get(f"{URL_ROUND}/{round_num}", headers=headers)
+            response = requests.get(f"{URL_ROUND}/{PREFIX_ROUNDS}{round_num}", headers=headers)
+
+            new_cookie = response.cookies.get("betty_web_production")
+            if new_cookie:
+                COOKIES[i] = new_cookie
 
             if response.status_code != 200:
                 print(f"Failed to retrieve the website. Status code: {response.status_code}")
@@ -132,7 +219,7 @@ def place_bets(matches, current_datetime):
                 deadline = datetime.fromisoformat(bet_prop["bet"]["deadline"].rstrip("Z")) + TIMEZONE_OFFSET
                 home_team = bet_prop["bet"]["teams"][0]["name"]
                 away_team = bet_prop["bet"]["teams"][1]["name"]
-                match_key = f"{home_team} - {away_team} - {event_date}"
+                match_key = f"{home_team} - {away_team} - {event_date[:10]}"
 
                 if match_key not in matches or deadline <= current_datetime:
                     continue

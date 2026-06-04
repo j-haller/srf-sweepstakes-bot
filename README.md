@@ -1,8 +1,8 @@
 # SRF Sweepstakes Bot
 
-Automatically submits tips for the [SRF EM Tippspiel](https://emtippspiel.srf.ch) sweepstakes based on betting odds. No money involved.
+Automatically submits tips for the [SRF WM Tippspiel](https://wmtippspiel.srf.ch) sweepstakes based on betting odds. No money involved.
 
-Originally built for the **UEFA European Championship 2024**.
+Updated for the **FIFA World Championship 2026**.
 
 ## How it works
 
@@ -25,7 +25,7 @@ cp .env.example .env
 | Variable  | Description                                                                 |
 |-----------|-----------------------------------------------------------------------------|
 | `API_KEY` | API key from [the-odds-api.com](https://the-odds-api.com/#get-access)       |
-| `COOKIES` | Session cookie(s) from [emtippspiel.srf.ch](https://emtippspiel.srf.ch) after logging in, comma-separated for multiple accounts |
+| `COOKIES` | Session cookie(s) from [wmtippspiel.srf.ch](https://wmtippspiel.srf.ch) after logging in, comma-separated for multiple accounts |
 
 ### Running with Docker (recommended)
 
@@ -44,7 +44,7 @@ python srf-sweepstakes-bot.py
 
 The following values in `srf-sweepstakes-bot.py` need to be updated before each tournament:
 
-- **`URL_ODDS`** — replace the sport key (`soccer_uefa_european_championship`) with the one for the new tournament. Available sport keys are listed in the [the-odds-api.com docs](https://the-odds-api.com/liveapi/guides/v4/#get-sports).
+- **`URL_ODDS`** — replace the sport key (`soccer_fifa_world_championship`) with the one for the new tournament. Available sport keys are listed in the [the-odds-api.com docs](https://the-odds-api.com/liveapi/guides/v4/#get-sports).
 - **`COUNTRIES`** — update the name-to-German-translation dictionary to match the participating teams.
-- **`AVG_GOALS`** — update with the average goals per game from the previous edition of the tournament.
+- **`RHO`** — Dixon-Coles low-score correction factor; update if desired (default `-0.13`).
 - **`TOTAL_ROUNDS`** — update if the number of rounds differs.
