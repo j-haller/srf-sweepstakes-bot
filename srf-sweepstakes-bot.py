@@ -210,7 +210,7 @@ def place_bets(matches, current_datetime):
                 bet_id = bet_prop["bet"]["bet_id"]
                 authenticity_token = bet_prop["authenticity_token"]
                 event_date = bet_prop["bet"]["event_date"]
-                deadline = datetime.fromisoformat(bet_prop["bet"]["deadline"].rstrip("Z")) + TIMEZONE_OFFSET
+                deadline = datetime.fromisoformat(bet_prop["bet"]["deadline"].rstrip("Z"))
                 home_team = bet_prop["bet"]["teams"][0]["name"]
                 away_team = bet_prop["bet"]["teams"][1]["name"]
                 match_key = f"{home_team} - {away_team} - {event_date[:10]}"
@@ -241,7 +241,7 @@ def place_bets(matches, current_datetime):
 
 def main():
     while True:
-        current_datetime = datetime.now().replace(microsecond=0)
+        current_datetime = datetime.utcnow().replace(microsecond=0)
         print(f"Start execution on {current_datetime}")
 
         matches = fetch_odds()
@@ -252,7 +252,7 @@ def main():
             break
 
         sleep_seconds = (next_match - current_datetime).total_seconds() - MIN_LEAD_SECONDS
-        print(f"Next execution on {next_match - timedelta(minutes=10)}")
+        print(f"Next execution on {next_match + TIMEZONE_OFFSET - timedelta(minutes=10)}")
         time.sleep(sleep_seconds)
 
 
