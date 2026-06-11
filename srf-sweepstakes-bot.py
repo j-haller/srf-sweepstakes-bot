@@ -145,29 +145,20 @@ def calculate_score(odds_home, odds_away, odds_draw):
     return best_score
 
 
-def fetch_odds(current_datetime):
+def fetch_odds():
     response = requests.get(URL_ODDS)
 
     if response.status_code != 200:
         print(f"Failed to retrieve the odds. Status code: {response.status_code}")
-        return None, None
+        return None
 
     print("Successfully got odds")
     matches = {}
-    next_match = None
 
     for match in response.json():
         home_team = match["home_team"]
         away_team = match["away_team"]
         event_date = match["commence_time"]
-        event_datetime = datetime.fromisoformat(event_date.rstrip("Z")) + TIMEZONE_OFFSET
-
-        if (
-            next_match is None
-            and event_datetime > current_datetime
-            and (event_datetime - current_datetime).total_seconds() > MIN_LEAD_SECONDS
-        ):
-            next_match = event_datetime
 
         odds_home, odds_away, odds_draw = 0, 0, 0
         for outcome in match["bookmakers"][0]["markets"][0]["outcomes"]:
@@ -184,10 +175,13 @@ def fetch_odds(current_datetime):
         away_team = en_to_de(away_team)
         matches[f"{home_team} - {away_team} - {event_date[:10]}"] = [goals_home, goals_away]
 
-    return matches, next_match
+    return matches
 
 
 def place_bets(matches, current_datetime):
+    next_match = None
+    seen_deadlines = set()
+
     for round_num in range(1, TOTAL_ROUNDS + 1):
         for i, cookie in enumerate(COOKIES):
             headers = {
@@ -221,6 +215,15 @@ def place_bets(matches, current_datetime):
                 away_team = bet_prop["bet"]["teams"][1]["name"]
                 match_key = f"{home_team} - {away_team} - {event_date[:10]}"
 
+                if deadline not in seen_deadlines:
+                    seen_deadlines.add(deadline)
+                    if (
+                        next_match is None
+                        and deadline > current_datetime
+                        and (deadline - current_datetime).total_seconds() > MIN_LEAD_SECONDS
+                    ):
+                        next_match = deadline
+
                 if match_key not in matches or deadline <= current_datetime:
                     continue
 
@@ -233,16 +236,16 @@ def place_bets(matches, current_datetime):
                 else:
                     print(f"Error placing bet: {home_team}: {score[0]} - {away_team}: {score[1]}")
 
+    return next_match
+
 
 def main():
     while True:
         current_datetime = datetime.now().replace(microsecond=0)
         print(f"Start execution on {current_datetime}")
 
-        matches, next_match = fetch_odds(current_datetime)
-
-        if matches is not None:
-            place_bets(matches, current_datetime)
+        matches = fetch_odds()
+        next_match = place_bets(matches or {}, current_datetime)
 
         if next_match is None:
             print("No more matches, the script has stopped")
