@@ -242,7 +242,7 @@ def place_bets(matches, current_datetime):
 def main():
     while True:
         current_datetime = datetime.utcnow().replace(microsecond=0)
-        print(f"Start execution on {current_datetime}")
+        print(f"Start execution on {current_datetime + TIMEZONE_OFFSET}")
 
         matches = fetch_odds()
         next_match = place_bets(matches or {}, current_datetime)
